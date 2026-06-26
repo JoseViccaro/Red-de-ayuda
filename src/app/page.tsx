@@ -466,7 +466,7 @@ export default function Home() {
         </div>
 
         {/* Mapa ocupando todo el fondo */}
-        <div className="flex-1 h-full z-10 relative">
+        <div className="flex-1 h-[calc(100vh-64px)] md:h-full z-10 relative">
           <MapLoader
             reports={filteredReports}
             center={mapCenter}

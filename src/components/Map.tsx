@@ -34,8 +34,12 @@ export default function Map({
 
   // Inicializar mapa
   useEffect(() => {
-    if (!mapContainerRef.current || mapRef.current) return;
+    if (!mapContainerRef.current) return;
 
+    // Limpiar el contenedor antes de inicializar para evitar el error "Map container is already initialized"
+    // común en React 18/Strict Mode en producción
+    mapContainerRef.current.innerHTML = '';
+    
     // Crear la instancia del mapa
     const map = L.map(mapContainerRef.current).setView(center, zoom);
     mapRef.current = map;
