@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 
 interface GeolocationState {
   coordinates: { latitude: number; longitude: number } | null;
@@ -16,25 +16,6 @@ export function useGeolocation() {
     loading: false,
     permissionStatus: 'unknown',
   });
-
-  // Consultar el estado del permiso si el navegador lo soporta
-  const checkPermission = useCallback(async () => {
-    if (typeof window === 'undefined' || !navigator.permissions) return;
-    try {
-      const status = await navigator.permissions.query({ name: 'geolocation' });
-      setState((prev) => ({ ...prev, permissionStatus: status.state }));
-      
-      status.onchange = () => {
-        setState((prev) => ({ ...prev, permissionStatus: status.state }));
-      };
-    } catch (e) {
-      console.warn('No se pudo verificar el permiso de geolocalización:', e);
-    }
-  }, []);
-
-  useEffect(() => {
-    checkPermission();
-  }, [checkPermission]);
 
   const requestLocation = useCallback(() => {
     if (typeof window === 'undefined' || !navigator.geolocation) {
