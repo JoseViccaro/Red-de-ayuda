@@ -296,7 +296,7 @@ export default function Home() {
   });
 
   return (
-    <div className="flex flex-col flex-1 h-screen bg-slate-50 dark:bg-slate-950 font-sans overflow-hidden">
+    <div className="flex flex-col flex-1 h-dvh bg-slate-50 dark:bg-slate-950 font-sans overflow-hidden">
       {/* PWA Register & Online Detector */}
       <PWARegister />
 
@@ -466,7 +466,7 @@ export default function Home() {
         </div>
 
         {/* Mapa ocupando todo el fondo */}
-        <div className="flex-1 h-[calc(100vh-64px)] md:h-full z-10 relative">
+        <div className="absolute inset-0 md:relative md:flex-1 w-full h-full z-10">
           <MapLoader
             reports={filteredReports}
             center={mapCenter}
