@@ -16,6 +16,7 @@ interface ReportFormProps {
   }) => void;
   isLoading: boolean;
   selectedLocation: { latitude: number; longitude: number } | null;
+  onLocationChange?: (lat: number, lng: number) => void;
 }
 
 export default function ReportForm({
@@ -23,11 +24,15 @@ export default function ReportForm({
   onSubmit,
   isLoading,
   selectedLocation,
+  onLocationChange,
 }: ReportFormProps) {
   const [type, setType] = useState<ReportType>('necesidad');
   const [categoryId, setCategoryId] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [addressSearchQuery, setAddressSearchQuery] = useState('');
+  const [isSearchingAddress, setIsSearchingAddress] = useState(false);
+  const [searchError, setSearchError] = useState('');
   const [urgency, setUrgency] = useState<UrgencyLevel>('media');
   const [reporterAlias, setReporterAlias] = useState('');
   const [contactInfo, setContactInfo] = useState('');
@@ -76,6 +81,37 @@ export default function ReportForm({
 
     fetchAddress();
   }, [selectedLocation]);
+
+  const handleSearchAddress = async () => {
+    if (!addressSearchQuery.trim()) return;
+    setIsSearchingAddress(true);
+    setSearchError('');
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addressSearchQuery)}&format=json&limit=1&accept-language=es`;
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'RedDeAyudaPWA/1.0',
+        },
+      });
+      if (!res.ok) throw new Error('HTTP error');
+      const data = await res.json();
+      if (data && data.length > 0) {
+        const result = data[0];
+        const lat = parseFloat(result.lat);
+        const lon = parseFloat(result.lon);
+        if (onLocationChange) {
+          onLocationChange(lat, lon);
+        }
+      } else {
+        setSearchError('No se encontró el lugar. Intenta agregando la ciudad o estado (ej: Hotel Meliá Caracas).');
+      }
+    } catch (e) {
+      console.error('Error in geocoding:', e);
+      setSearchError('Error de conexión al buscar la dirección.');
+    } finally {
+      setIsSearchingAddress(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -234,6 +270,40 @@ export default function ReportForm({
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Buscador de Direcciones en Mapa (Geocodificación) */}
+      <div className="space-y-1">
+        <label htmlFor="addressSearch" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+          🔍 Buscar lugar o dirección en el mapa
+        </label>
+        <div className="flex gap-1.5">
+          <input
+            type="text"
+            id="addressSearch"
+            placeholder="Ej: Hotel Meliá Caracas / Plaza Bolívar Chacao"
+            value={addressSearchQuery}
+            onChange={(e) => setAddressSearchQuery(e.target.value)}
+            className="flex-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-850 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSearchAddress();
+              }
+            }}
+          />
+          <button
+            type="button"
+            onClick={handleSearchAddress}
+            disabled={isSearchingAddress}
+            className="bg-blue-600 hover:bg-blue-750 text-white font-bold rounded-lg text-xs px-3 py-2 transition-colors disabled:bg-blue-400 cursor-pointer"
+          >
+            {isSearchingAddress ? 'Buscando...' : 'Buscar'}
+          </button>
+        </div>
+        {searchError && (
+          <p className="text-[10px] text-red-600 font-semibold mt-1">{searchError}</p>
+        )}
       </div>
 
       {/* Ubicación actual */}

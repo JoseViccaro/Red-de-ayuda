@@ -414,6 +414,7 @@ export default function Home() {
                 onSubmit={handleCreateReport}
                 isLoading={isLoading}
                 selectedLocation={selectedLocation}
+                onLocationChange={selectLocationOnMap}
               />
               <button 
                 onClick={() => setActiveTab('map')} 
