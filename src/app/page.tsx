@@ -264,6 +264,50 @@ export default function Home() {
     }
   };
 
+  const handleDeleteReport = async (reportId: string) => {
+    // Si es un reporte guardado localmente (offline) que aún no se sincronizó
+    if (reportId.startsWith('offline-')) {
+      const index = parseInt(reportId.replace('offline-', ''), 10);
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('red-ayuda-offline-reports');
+        if (stored) {
+          try {
+            const queue = JSON.parse(stored);
+            queue.splice(index, 1);
+            localStorage.setItem('red-ayuda-offline-reports', JSON.stringify(queue));
+            updatePendingCount();
+          } catch (e) {
+            console.error('Error al manipular cola offline:', e);
+          }
+        }
+      }
+      setReports(prev => prev.filter(r => r.id !== reportId));
+      setSelectedReport(null);
+      setActiveTab('map');
+      setSyncStatus('Reporte local eliminado.');
+      return;
+    }
+
+    // Si es un reporte en el servidor, usamos UPDATE a status='resuelto' (aprovechando RLS)
+    try {
+      const { error } = await supabase
+        .from('reports')
+        .update({ status: 'resuelto' })
+        .eq('id', reportId);
+
+      if (error) throw error;
+
+      // Remover del estado local para actualizar el mapa y la lista
+      setReports(prev => prev.filter(r => r.id !== reportId));
+      setSelectedReport(null);
+      setActiveTab('map');
+      setSyncStatus('Reporte marcado como resuelto / eliminado.');
+    } catch (e) {
+      console.error('Error al eliminar reporte:', e);
+      alert('Error al intentar eliminar el reporte. Verifica tu conexión.');
+    }
+  };
+
   const handleSync = async () => {
     setSyncStatus('Sincronizando reportes pendientes...');
     const result = await syncOfflineReports();
@@ -366,6 +410,8 @@ export default function Home() {
                 onValidate={handleValidateReport}
                 isSubmitting={isSubmittingValidation}
                 userVote={userVotesMap[selectedReport.id] || null}
+                currentUserId={userId}
+                onDeleteReport={handleDeleteReport}
               />
               <button 
                 onClick={() => setActiveTab('map')} 

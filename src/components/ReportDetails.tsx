@@ -9,6 +9,8 @@ interface ReportDetailsProps {
   onValidate: (vote: ValidationType) => void;
   isSubmitting: boolean;
   userVote: ValidationType | null;
+  currentUserId?: string | null;
+  onDeleteReport?: (reportId: string) => Promise<void>;
 }
 
 export default function ReportDetails({
@@ -17,8 +19,11 @@ export default function ReportDetails({
   onValidate,
   isSubmitting,
   userVote,
+  currentUserId,
+  onDeleteReport,
 }: ReportDetailsProps) {
   const [errorMsg, setErrorMsg] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleVote = (vote: ValidationType) => {
     setErrorMsg('');
@@ -179,6 +184,33 @@ export default function ReportDetails({
           </p>
         )}
       </div>
+
+      {/* Botón de Eliminar para el Creador */}
+      {currentUserId && report.reporter_id === currentUserId && (
+        <div className="pt-2">
+          <button
+            onClick={async () => {
+              if (window.confirm('¿Estás seguro de que querés eliminar este reporte?')) {
+                setIsDeleting(true);
+                try {
+                  if (onDeleteReport) {
+                    await onDeleteReport(report.id);
+                  }
+                } catch (err) {
+                  console.error(err);
+                  setErrorMsg('Error al intentar eliminar el reporte.');
+                } finally {
+                  setIsDeleting(false);
+                }
+              }
+            }}
+            disabled={isDeleting}
+            className="w-full py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5"
+          >
+            🗑️ {isDeleting ? 'Eliminando...' : 'Eliminar mi Reporte'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -8,13 +8,28 @@ export default function PWARegister() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // Registrar Service Worker
+    // Registrar Service Worker y manejar actualizaciones automáticas
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker
           .register('/sw.js')
-          .then((reg) => console.log('Service Worker registrado con éxito:', reg.scope))
+          .then((reg) => {
+            console.log('Service Worker registrado con éxito:', reg.scope);
+            // Comprobar si hay actualizaciones del Service Worker en el servidor cada 60 segundos
+            setInterval(() => {
+              reg.update();
+            }, 60000);
+          })
           .catch((err) => console.error('Error al registrar Service Worker:', err));
+      });
+
+      // Recargar automáticamente cuando un nuevo Service Worker tome el control (skipWaiting + claim)
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
       });
     }
 
