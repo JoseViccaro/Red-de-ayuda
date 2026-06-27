@@ -43,6 +43,7 @@ export default function Home() {
   const [filterType, setFilterType] = useState<string>('all');
   const [filterUrgency, setFilterUrgency] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmittingValidation, setIsSubmittingValidation] = useState(false);
@@ -347,7 +348,15 @@ export default function Home() {
     const typeMatch = filterType === 'all' || r.type === filterType;
     const urgencyMatch = filterUrgency === 'all' || r.urgency === filterUrgency;
     const categoryMatch = filterCategory === 'all' || r.category_id === filterCategory;
-    return typeMatch && urgencyMatch && categoryMatch;
+    
+    // Filtro por texto (busca en título, descripción, alias y datos de contacto)
+    const matchesSearch = searchQuery.trim() === '' || 
+      r.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      r.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      r.reporter_alias.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (r.contact_info && r.contact_info.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    return typeMatch && urgencyMatch && categoryMatch && matchesSearch;
   });
 
   return (
@@ -443,12 +452,31 @@ export default function Home() {
 
               <div className="flex justify-between items-center">
                 <h2 className="font-bold text-slate-800 dark:text-slate-100">Filtros Activos</h2>
-                {(filterType !== 'all' || filterUrgency !== 'all' || filterCategory !== 'all') && (
+                {(filterType !== 'all' || filterUrgency !== 'all' || filterCategory !== 'all' || searchQuery !== '') && (
                   <button 
-                    onClick={() => { setFilterType('all'); setFilterUrgency('all'); setFilterCategory('all'); }}
+                    onClick={() => { setFilterType('all'); setFilterUrgency('all'); setFilterCategory('all'); setSearchQuery(''); }}
                     className="text-xs text-blue-600 dark:text-blue-400 font-bold"
                   >
                     Limpiar
+                  </button>
+                )}
+              </div>
+
+              {/* Buscador de Texto */}
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="🔍 Buscar por nombre, C.I., palabra..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full text-xs rounded-lg border border-slate-200 dark:border-slate-800 p-2.5 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold"
+                  >
+                    ✕
                   </button>
                 )}
               </div>
