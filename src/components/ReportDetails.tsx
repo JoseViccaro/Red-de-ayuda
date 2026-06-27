@@ -24,6 +24,58 @@ export default function ReportDetails({
 }: ReportDetailsProps) {
   const [errorMsg, setErrorMsg] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [shareSuccess, setShareSuccess] = useState(false);
+
+  const handleShare = async () => {
+    setErrorMsg('');
+    setShareSuccess(false);
+
+    let shareText = '';
+    const appUrl = typeof window !== 'undefined' ? window.location.origin : 'https://red-de-ayuda.vercel.app';
+    const reportUrl = `${appUrl}?report=${report.id}`;
+
+    // Intentar deducir si es un caso de persona por su título o descripción
+    const isMissingPerson = report.title.toLowerCase().includes('desaparecid') || 
+                             report.description.toLowerCase().includes('desaparecid') || 
+                             report.title.toLowerCase().includes('búsqueda');
+                             
+    const isFoundPerson = report.title.toLowerCase().includes('encontrad') || 
+                           report.title.toLowerCase().includes('a salvo') || 
+                           report.description.toLowerCase().includes('encontrad');
+
+    if (isMissingPerson) {
+      shareText = `🇻🇪 Red de Ayuda: Se busca a ${report.title}.\nContacto: ${report.contact_info || 'No provisto'}.\n${report.description}\n\nVer mapa y detalles en:`;
+    } else if (isFoundPerson) {
+      shareText = `🇻🇪 Red de Ayuda: Persona encontrada a salvo: ${report.title}.\nContacto/Ubicación: ${report.contact_info || 'No provisto'}.\n${report.description}\n\nVer mapa y detalles en:`;
+    } else {
+      shareText = `🇻🇪 Red de Ayuda: [${report.type.toUpperCase()}] ${report.title} (Urgencia: ${report.urgency.toUpperCase()}).\nContacto: ${report.contact_info || 'No provisto'}.\n${report.description}\n\nVer mapa y detalles en:`;
+    }
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Red de Ayuda - ${report.title}`,
+          text: shareText,
+          url: reportUrl,
+        });
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          console.error('Error al compartir nativamente:', err);
+          setErrorMsg('No se pudo abrir el menú de compartir.');
+        }
+      }
+    } else {
+      try {
+        const fullMessage = `${shareText} ${reportUrl}`;
+        await navigator.clipboard.writeText(fullMessage);
+        setShareSuccess(true);
+        setTimeout(() => setShareSuccess(false), 3000);
+      } catch (err) {
+        console.error('Error al copiar al portapapeles:', err);
+        setErrorMsg('No se pudo copiar el reporte al portapapeles.');
+      }
+    }
+  };
 
   const handleVote = (vote: ValidationType) => {
     setErrorMsg('');
@@ -183,6 +235,20 @@ export default function ReportDetails({
             ✓ Tu validación ha sido registrada. ¡Gracias por ayudar!
           </p>
         )}
+      </div>
+
+      {/* Botón de Compartir Reporte */}
+      <div className="pt-1">
+        <button
+          onClick={handleShare}
+          className={`w-full py-2.5 font-bold rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm ${
+            shareSuccess 
+              ? 'bg-emerald-600 text-white hover:bg-emerald-700' 
+              : 'bg-blue-600 hover:bg-blue-750 text-white'
+          }`}
+        >
+          <span>{shareSuccess ? '📋 ¡Texto Copiado!' : '📤 Compartir Reporte'}</span>
+        </button>
       </div>
 
       {/* Botón de Eliminar para el Creador */}
