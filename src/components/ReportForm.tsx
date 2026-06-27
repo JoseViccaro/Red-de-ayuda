@@ -69,6 +69,20 @@ export default function ReportForm({
     });
   };
 
+  const selectedCategory = categories.find(c => c.id === categoryId);
+  const categorySlug = selectedCategory?.slug || '';
+
+  let titlePlaceholder = 'Ej: Pozo de agua activo / Falta comida';
+  let descPlaceholder = 'Aporta detalles útiles como horarios, cantidades, etc.';
+
+  if (categorySlug === 'personas_desaparecidas') {
+    titlePlaceholder = 'Ej: Juan Pérez (42 años) - Desaparecido';
+    descPlaceholder = 'Detalla vestimenta, señas físicas particulares, fecha/hora de desaparición y contacto de familiares.';
+  } else if (categorySlug === 'personas_encontradas') {
+    titlePlaceholder = 'Ej: Juan Pérez - Encontrado a salvo';
+    descPlaceholder = 'Detalla estado de salud actual, refugio u hospital donde se encuentra y formas de contacto.';
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4 max-w-md mx-auto p-4 bg-white dark:bg-slate-900 rounded-xl shadow-md border border-slate-100 dark:border-slate-800">
       <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Crear Nuevo Reporte</h2>
@@ -132,7 +146,7 @@ export default function ReportForm({
         <input
           type="text"
           id="title"
-          placeholder="Ej: Pozo de agua activo / Falta comida"
+          placeholder={titlePlaceholder}
           maxLength={100}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -145,7 +159,7 @@ export default function ReportForm({
         <label htmlFor="description" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Detalle o Descripción</label>
         <textarea
           id="description"
-          placeholder="Aporta detalles útiles como horarios, cantidades, etc."
+          placeholder={descPlaceholder}
           rows={3}
           value={description}
           onChange={(e) => setDescription(e.target.value)}

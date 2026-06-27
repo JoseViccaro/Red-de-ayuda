@@ -49,7 +49,7 @@ export default function Home() {
   const [syncStatus, setSyncStatus] = useState<string>('');
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
 
-  // Inicialización (Auth Anónima y Carga)
+  // Inicialización (Auth Anónima y Carga) y Polling automático
   useEffect(() => {
     initAuthAndLoad();
     
@@ -57,6 +57,15 @@ export default function Home() {
     if (typeof window !== 'undefined' && navigator.onLine) {
       handleSync();
     }
+
+    // Consultar nuevos reportes silenciosamente cada 45 segundos si hay red
+    const interval = setInterval(() => {
+      if (typeof window !== 'undefined' && navigator.onLine) {
+        fetchReports();
+      }
+    }, 45000);
+
+    return () => clearInterval(interval);
   }, []);
 
   // Centrar mapa si se obtienen coordenadas de geolocalización
