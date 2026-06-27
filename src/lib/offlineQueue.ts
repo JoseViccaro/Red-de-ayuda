@@ -54,7 +54,7 @@ export async function syncOfflineReports(): Promise<{ success: number; failed: n
 
   for (const report of reports) {
     try {
-      const { error } = await supabase.from('reports').insert({
+      const { data, error } = await supabase.from('reports').insert({
         type: report.type,
         category_id: report.category_id,
         title: report.title,
@@ -67,9 +67,16 @@ export async function syncOfflineReports(): Promise<{ success: number; failed: n
         status: 'activo',
         // Dejamos que Supabase use su created_at por defecto para v1,
         // o mapeamos la fecha offline si cambiamos el schema.
-      });
+      }).select('id').single();
 
       if (error) throw error;
+
+      if (data && data.id) {
+        const myCreated = JSON.parse(localStorage.getItem('red-ayuda-my-created-reports') || '[]');
+        myCreated.push(data.id);
+        localStorage.setItem('red-ayuda-my-created-reports', JSON.stringify(myCreated));
+      }
+
       successCount++;
     } catch (err) {
       console.error('Error al sincronizar reporte offline:', err);

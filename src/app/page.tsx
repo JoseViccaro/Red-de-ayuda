@@ -37,6 +37,7 @@ export default function Home() {
   
   // Auth y Sesión
   const [userId, setUserId] = useState<string | null>(null);
+  const [myCreatedReports, setMyCreatedReports] = useState<string[]>([]);
   const [userVotesMap, setUserVotesMap] = useState<{ [reportId: string]: ValidationType }>({});
 
   // Filtros
@@ -54,9 +55,21 @@ export default function Home() {
   useEffect(() => {
     initAuthAndLoad();
     
-    // Intentar sincronización automática si estamos online
-    if (typeof window !== 'undefined' && navigator.onLine) {
-      handleSync();
+    if (typeof window !== 'undefined') {
+      // Cargar reportes creados localmente
+      const stored = localStorage.getItem('red-ayuda-my-created-reports');
+      if (stored) {
+        try {
+          setMyCreatedReports(JSON.parse(stored));
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      // Intentar sincronización automática si estamos online
+      if (navigator.onLine) {
+        handleSync();
+      }
     }
 
     // Consultar nuevos reportes silenciosamente cada 45 segundos si hay red
@@ -212,11 +225,18 @@ export default function Home() {
     }
 
     try {
-      const { error } = await supabase.from('reports').insert({
+      const { data, error } = await supabase.from('reports').insert({
         ...reportData,
         status: 'activo',
-      });
+      }).select('id').single();
       if (error) throw error;
+
+      if (data && data.id && typeof window !== 'undefined') {
+        const updated = [...myCreatedReports, data.id];
+        setMyCreatedReports(updated);
+        localStorage.setItem('red-ayuda-my-created-reports', JSON.stringify(updated));
+      }
+
       setSyncStatus('Reporte publicado con éxito.');
       fetchReports();
       setActiveTab('map');
@@ -433,6 +453,7 @@ export default function Home() {
                 userVote={userVotesMap[selectedReport.id] || null}
                 currentUserId={userId}
                 onDeleteReport={handleDeleteReport}
+                myCreatedReports={myCreatedReports}
               />
               <button 
                 onClick={() => setActiveTab('map')} 

@@ -11,6 +11,7 @@ interface ReportDetailsProps {
   userVote: ValidationType | null;
   currentUserId?: string | null;
   onDeleteReport?: (reportId: string) => Promise<void>;
+  myCreatedReports?: string[];
 }
 
 export default function ReportDetails({
@@ -21,6 +22,7 @@ export default function ReportDetails({
   userVote,
   currentUserId,
   onDeleteReport,
+  myCreatedReports,
 }: ReportDetailsProps) {
   const [errorMsg, setErrorMsg] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -101,6 +103,10 @@ export default function ReportDetails({
   const fakes = report.validations_count?.falso || 0;
   
   const totalVotes = confirms + outdateds + duplicates + fakes;
+
+  // Es el dueño si coincide el reporter_id con la sesión O si el reporte está en su almacenamiento local
+  const isOwner = (currentUserId && report.reporter_id === currentUserId) || 
+                  (myCreatedReports && myCreatedReports.includes(report.id));
 
   return (
     <div className="p-4 bg-white dark:bg-slate-900 rounded-xl shadow-md border border-slate-100 dark:border-slate-800 space-y-4">
@@ -252,7 +258,7 @@ export default function ReportDetails({
       </div>
 
       {/* Botón de Eliminar para el Creador */}
-      {currentUserId && report.reporter_id === currentUserId && (
+      {isOwner && (
         <div className="pt-2">
           <button
             onClick={async () => {
