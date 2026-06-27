@@ -186,7 +186,7 @@ export default function Home() {
       ...formData,
       latitude: selectedLocation.latitude,
       longitude: selectedLocation.longitude,
-      reporter_id: userId || undefined,
+      reporter_id: (userId && !userId.startsWith('temp-')) ? userId : undefined,
     };
 
     if (typeof window !== 'undefined' && !navigator.onLine) {
