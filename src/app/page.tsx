@@ -20,6 +20,8 @@ const MOCK_CATEGORIES: Category[] = [
   { id: '6', slug: 'atencion_medica', name: 'Atención médica', icon: 'Stethoscope' },
   { id: '7', slug: 'transporte', name: 'Transporte o Evacuación', icon: 'Truck' },
   { id: '8', slug: 'internet', name: 'Internet o Comunicación', icon: 'Wifi' },
+  { id: '9', slug: 'personas_desaparecidas', name: 'Búsqueda de Personas', icon: 'Users' },
+  { id: '10', slug: 'personas_encontradas', name: 'Personas Encontradas', icon: 'UserCheck' },
 ];
 
 export default function Home() {

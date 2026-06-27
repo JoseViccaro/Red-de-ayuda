@@ -19,7 +19,9 @@ INSERT INTO public.categories (slug, name, icon) VALUES
 ('electricidad', 'Electricidad o Carga', 'Zap'),
 ('atencion_medica', 'Atención médica', 'Stethoscope'),
 ('transporte', 'Transporte o Evacuación', 'Truck'),
-('internet', 'Internet o Comunicación', 'Wifi')
+('internet', 'Internet o Comunicación', 'Wifi'),
+('personas_desaparecidas', 'Búsqueda de personas', 'Users'),
+('personas_encontradas', 'Personas encontradas', 'UserCheck')
 ON CONFLICT (slug) DO NOTHING;
 
 -- 2. Tabla de Reportes
