@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Category, ReportType, UrgencyLevel } from '@/types';
 
 interface ReportFormProps {
@@ -32,6 +32,50 @@ export default function ReportForm({
   const [reporterAlias, setReporterAlias] = useState('');
   const [contactInfo, setContactInfo] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [detectedAddress, setDetectedAddress] = useState('');
+  const [isFetchingAddress, setIsFetchingAddress] = useState(false);
+
+  useEffect(() => {
+    if (!selectedLocation) {
+      setDetectedAddress('');
+      return;
+    }
+
+    const fetchAddress = async () => {
+      setIsFetchingAddress(true);
+      try {
+        const url = `https://nominatim.openstreetmap.org/reverse?lat=${selectedLocation.latitude}&lon=${selectedLocation.longitude}&format=json&accept-language=es`;
+        const res = await fetch(url, {
+          headers: {
+            'User-Agent': 'RedDeAyudaPWA/1.0',
+          },
+        });
+        if (!res.ok) throw new Error('HTTP error');
+        const data = await res.json();
+        if (data && data.address) {
+          const addr = data.address;
+          const parts: string[] = [];
+          if (addr.road) parts.push(addr.road);
+          if (addr.neighbourhood) parts.push(addr.neighbourhood);
+          if (addr.suburb) parts.push(addr.suburb);
+          if (addr.city || addr.town) parts.push(addr.city || addr.town);
+          if (addr.state) parts.push(addr.state);
+          
+          const simplified = parts.join(', ') || data.display_name;
+          setDetectedAddress(simplified);
+        } else {
+          setDetectedAddress(data.display_name || 'Ubicación seleccionada');
+        }
+      } catch (e) {
+        console.warn('Geocodificación inversa falló o fue bloqueada:', e);
+        setDetectedAddress('Ubicación seleccionada');
+      } finally {
+        setIsFetchingAddress(false);
+      }
+    };
+
+    fetchAddress();
+  }, [selectedLocation]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,11 +102,15 @@ export default function ReportForm({
       return;
     }
 
+    const finalDescription = detectedAddress && detectedAddress !== 'Ubicación seleccionada'
+      ? `${description.trim()}\n\n📍 Ubicación estimada: ${detectedAddress}`
+      : description.trim();
+
     onSubmit({
       type,
       category_id: categoryId,
       title: title.trim(),
-      description: description.trim(),
+      description: finalDescription,
       urgency,
       reporter_alias: reporterAlias.trim(),
       contact_info: contactInfo.trim() || undefined,
@@ -189,16 +237,30 @@ export default function ReportForm({
       </div>
 
       {/* Ubicación actual */}
-      <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200/60 dark:border-slate-800">
-        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 block mb-1">Coordenadas del reporte</span>
-        {selectedLocation ? (
-          <p className="text-sm font-mono text-slate-700 dark:text-slate-300">
-            Lat: {selectedLocation.latitude.toFixed(6)}, Lng: {selectedLocation.longitude.toFixed(6)}
-          </p>
-        ) : (
-          <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-            ⚠️ Toca el mapa para seleccionar la ubicación exacta del reporte.
-          </p>
+      <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200/60 dark:border-slate-800 space-y-2">
+        <div>
+          <span className="text-xs font-bold text-slate-500 dark:text-slate-400 block mb-0.5">Coordenadas del reporte</span>
+          {selectedLocation ? (
+            <p className="text-sm font-mono text-slate-700 dark:text-slate-300">
+              Lat: {selectedLocation.latitude.toFixed(6)}, Lng: {selectedLocation.longitude.toFixed(6)}
+            </p>
+          ) : (
+            <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+              ⚠️ Toca el mapa para seleccionar la ubicación exacta del reporte.
+            </p>
+          )}
+        </div>
+        {selectedLocation && (
+          <div>
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 block mb-0.5">Dirección aproximada</span>
+            {isFetchingAddress ? (
+              <p className="text-xs text-slate-400 animate-pulse">Obteniendo dirección...</p>
+            ) : (
+              <p className="text-xs text-slate-700 dark:text-slate-350 bg-white dark:bg-slate-900 px-2 py-1 rounded border border-slate-100 dark:border-slate-850 break-words leading-tight">
+                {detectedAddress || 'Sin dirección detectada'}
+              </p>
+            )}
+          </div>
         )}
       </div>
 

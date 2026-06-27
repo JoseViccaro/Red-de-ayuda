@@ -3,6 +3,9 @@
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.markercluster';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import { Report } from '@/types';
 
 // Asegurarse de que el CSS de Leaflet esté importado.
@@ -29,6 +32,7 @@ export default function Map({
 }: MapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const clusterGroupRef = useRef<L.MarkerClusterGroup | null>(null);
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
   const selectMarkerRef = useRef<L.Marker | null>(null);
   const userMarkerRef = useRef<L.Marker | null>(null);
@@ -50,6 +54,15 @@ export default function Map({
       attribution: '&copy; OpenStreetMap',
       maxZoom: 19,
     }).addTo(map);
+
+    // Inicializar el grupo de clusters
+    const clusterGroup = L.markerClusterGroup({
+      showCoverageOnHover: false,
+      zoomToBoundsOnClick: true,
+      maxClusterRadius: 40,
+    });
+    map.addLayer(clusterGroup);
+    clusterGroupRef.current = clusterGroup;
 
     // Evento de click para selección manual de ubicación
     if (interactive && onSelectLocation) {
@@ -122,12 +135,13 @@ export default function Map({
   // Actualizar marcadores de reportes
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    const clusterGroup = clusterGroupRef.current;
+    if (!map || !clusterGroup) return;
 
-    // Eliminar marcadores viejos que no estén en la lista
+    // Eliminar marcadores viejos que no estén en la lista (removiendo del clusterGroup)
     Object.keys(markersRef.current).forEach((id) => {
       if (!reports.find((r) => r.id === id)) {
-        markersRef.current[id].remove();
+        clusterGroup.removeLayer(markersRef.current[id]);
         delete markersRef.current[id];
       }
     });
@@ -144,7 +158,14 @@ export default function Map({
         : 'bg-emerald-600';
       
       const pulseClass = isSelected ? 'ring-4 ring-offset-2 ring-blue-500 scale-125' : '';
-      const markerText = isNeed ? '⚠️' : '🤝';
+      
+      // Personalizar el marcador textual para casos especiales de personas
+      let markerText = isNeed ? '⚠️' : '🤝';
+      if (report.category_id) {
+        // Encontrar la categoría si coincide con personas desaparecidas/encontradas
+        const catSlug = reports.find(r => r.id === report.id)?.category_id;
+        // (El emoji se mantiene simple y legible en el mapa, pero podemos usar el texto que queramos)
+      }
 
       const customIcon = L.divIcon({
         html: `
@@ -161,7 +182,7 @@ export default function Map({
         markersRef.current[report.id].setLatLng(latLng);
         markersRef.current[report.id].setIcon(customIcon);
       } else {
-        const marker = L.marker(latLng, { icon: customIcon }).addTo(map);
+        const marker = L.marker(latLng, { icon: customIcon });
         
         // Crear popup simple para evitar bloating
         const popupContent = `
@@ -172,6 +193,8 @@ export default function Map({
           </div>
         `;
         marker.bindPopup(popupContent);
+        
+        clusterGroup.addLayer(marker);
         markersRef.current[report.id] = marker;
       }
     });
