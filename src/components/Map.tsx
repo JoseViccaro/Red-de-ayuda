@@ -3,10 +3,19 @@
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import 'leaflet.markercluster';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import { Report } from '@/types';
+
+// leaflet.markercluster is a legacy UMD plugin that expects `L` (Leaflet) to
+// exist as a global variable. Modern bundlers (Turbopack / webpack) import
+// leaflet as an ES module and do NOT expose it globally, which causes a
+// ReferenceError at runtime. We fix this by assigning `L` to the window object
+// before requiring the plugin.
+if (typeof window !== 'undefined') {
+  (window as any).L = L;
+  require('leaflet.markercluster');
+}
 
 // Asegurarse de que el CSS de Leaflet esté importado.
 // Lo importaremos en el layout principal para que esté disponible globalmente.
