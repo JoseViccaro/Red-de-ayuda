@@ -48,7 +48,7 @@ export default function Home() {
   
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmittingValidation, setIsSubmittingValidation] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<string>('[DEBUG] Initializing...');
+  const [syncStatus, setSyncStatus] = useState<string>('');
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
 
   // Inicialización (Auth Anónima y Carga) y Polling automático
@@ -91,14 +91,11 @@ export default function Home() {
   }, [coordinates]);
 
   const initAuthAndLoad = async () => {
-    setSyncStatus('[DEBUG] Auth starting...');
     try {
-      // Iniciar sesión de forma anónima de manera silenciosa
       const { data: authData } = await supabase.auth.getSession();
       let session = authData.session;
 
       if (!session) {
-        setSyncStatus('[DEBUG] No session, signing in anonymously...');
         const { data: signInData, error: signInError } = await supabase.auth.signInAnonymously();
         if (signInError) throw signInError;
         session = signInData.session;
@@ -106,11 +103,9 @@ export default function Home() {
 
       if (session?.user) {
         setUserId(session.user.id);
-        setSyncStatus('[DEBUG] Auth OK: ' + session.user.id.substring(0, 8));
       }
-    } catch (e: any) {
-      console.warn('Auth error:', e);
-      setSyncStatus('[DEBUG] Auth failed: ' + (e?.message || String(e)).substring(0, 60));
+    } catch (e) {
+      console.warn('Auth fallback to local session:', e);
       if (typeof window !== 'undefined') {
         let tempId = localStorage.getItem('red-ayuda-temp-user-id');
         if (!tempId) {
@@ -152,7 +147,6 @@ export default function Home() {
   };
 
   const fetchReports = async () => {
-    setSyncStatus(prev => prev + ' | Fetching reports...');
     try {
       let allReports: any[] = [];
       let page = 0;
@@ -165,10 +159,7 @@ export default function Home() {
           .eq('status', 'activo')
           .range(page * pageSize, (page + 1) * pageSize - 1);
         
-        if (error) {
-          setSyncStatus(`[DEBUG] Supabase error: ${error.message} (code: ${error.code})`);
-          throw error;
-        }
+        if (error) throw error;
         if (data && data.length > 0) {
           allReports = [...allReports, ...data];
           if (data.length < pageSize) {
@@ -181,8 +172,6 @@ export default function Home() {
         }
       }
       
-      setSyncStatus(`[DEBUG] Fetched ${allReports.length} reports OK`);
-      
       if (allReports.length > 0) {
         try {
           localStorage.setItem('cached_reports', JSON.stringify(allReports));
@@ -192,21 +181,18 @@ export default function Home() {
       }
       
       processAndSetReports(allReports);
-    } catch (e: any) {
-      const errMsg = e?.message || String(e);
-      console.warn('Error fetching online reports:', e);
-      setSyncStatus(`[DEBUG] Fetch FAILED: ${errMsg.substring(0, 80)}`);
+    } catch (e) {
+      console.warn('Error fetching reports, using offline cache:', e);
       const cached = localStorage.getItem('cached_reports');
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
-          setSyncStatus(`[DEBUG] Loaded ${parsed.length} from cache after error`);
           processAndSetReports(parsed);
+          setSyncStatus('Modo Offline: mostrando datos guardados localmente.');
         } catch (parseError) {
           processAndSetReports([]);
         }
       } else {
-        setSyncStatus(`[DEBUG] No cache available. Error was: ${errMsg.substring(0, 80)}`);
         processAndSetReports([]);
       }
     }
