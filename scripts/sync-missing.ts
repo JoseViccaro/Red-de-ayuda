@@ -73,11 +73,40 @@ function estimateCoordinates(text: string): { latitude: number; longitude: numbe
   return { latitude: 10.4806, longitude: -66.9036 };
 }
 
+function getBigrams(str: string): Set<string> {
+  const bigrams = new Set<string>();
+  for (let i = 0; i < str.length - 1; i++) {
+    bigrams.add(str.substring(i, i + 2));
+  }
+  return bigrams;
+}
+
+function diceCoefficient(str1: string, str2: string): number {
+  const s1 = str1.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
+  const s2 = str2.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
+  if (s1 === s2) return 1;
+  if (s1.length < 2 || s2.length < 2) return 0;
+  
+  const bigrams1 = getBigrams(s1);
+  const bigrams2 = getBigrams(s2);
+  
+  let intersection = 0;
+  for (const val of bigrams1) {
+    if (bigrams2.has(val)) {
+      intersection++;
+    }
+  }
+  
+  return (2 * intersection) / (bigrams1.size + bigrams2.size);
+}
+
 async function runSync() {
   console.log('Starting missing persons synchronization...');
   
   let categoryId = 'mock-category-uuid-12345';
   
+  let existingActiveReports: any[] = [];
+
   if (!isDryRun && supabase) {
     const { data: category, error: catError } = await supabase
       .from('categories')
@@ -90,9 +119,20 @@ async function runSync() {
       process.exit(1);
     }
     categoryId = category.id;
+
+    // Fetch existing active reports to match names
+    const { data: activeReports, error: reportsError } = await supabase
+      .from('reports')
+      .select('id, title, category_id, external_id')
+      .eq('status', 'activo');
+    
+    if (!reportsError && activeReports) {
+      existingActiveReports = activeReports;
+    }
   }
   
   console.log(`Using Category ID for "personas_desaparecidas": ${categoryId}`);
+  console.log(`Loaded ${existingActiveReports.length} existing active reports for deduplication matching.`);
 
   const apiUrlBase = 'https://api.terremotovenezuela.app';
   let currentPage = 1;
@@ -129,7 +169,33 @@ async function runSync() {
         if (p.id) fetchedExternalIds.push(p.id);
       });
 
-      const reportsToUpsert = people.map((person: any) => {
+      const reportsToUpsert: any[] = [];
+
+      for (const person of people) {
+        // 1. Fuzzy match deduplication against database and current batch
+        const cleanName = person.name.trim();
+        if (!cleanName) continue;
+
+        const isDuplicateInDb = existingActiveReports.some((r) => {
+          // Check if same external ID
+          if (r.external_id === person.id) return false; // Let upsert handle same ID update
+          
+          const cleanTitle = r.title.replace('Búsqueda: ', '').replace('Localizado: ', '').trim();
+          const score = diceCoefficient(cleanName, cleanTitle);
+          return score > 0.85;
+        });
+
+        const isDuplicateInBatch = reportsToUpsert.some((r) => {
+          const cleanTitle = r.title.replace('Búsqueda: ', '').replace('Localizado: ', '').trim();
+          const score = diceCoefficient(cleanName, cleanTitle);
+          return score > 0.85;
+        });
+
+        if (isDuplicateInDb || isDuplicateInBatch) {
+          console.log(`[DEDUPLICATED] Skipping "${cleanName}" - name is highly similar to an existing active report.`);
+          continue;
+        }
+
         const lastSeen = person.lastSeen || '';
         const description = person.description || '';
         const combinedText = `${lastSeen}\n${description}`;
@@ -140,7 +206,7 @@ async function runSync() {
           ? `${apiUrlBase}${person.photoUrl}` 
           : null;
 
-        return {
+        reportsToUpsert.push({
           type: 'necesidad',
           category_id: categoryId,
           title: `Búsqueda: ${person.name}`.substring(0, 100),
@@ -154,13 +220,15 @@ async function runSync() {
           external_id: person.id,
           source: 'api.terremotovenezuela.app',
           image_url
-        };
-      });
+        });
+      }
 
       if (isDryRun) {
         console.log(`[DRY RUN] Would upsert ${reportsToUpsert.length} records. Showing first one:`);
-        console.log(JSON.stringify(reportsToUpsert[0], null, 2));
-      } else if (supabase) {
+        if (reportsToUpsert.length > 0) {
+          console.log(JSON.stringify(reportsToUpsert[0], null, 2));
+        }
+      } else if (supabase && reportsToUpsert.length > 0) {
         const { error } = await supabase
           .from('reports')
           .upsert(reportsToUpsert, {

@@ -87,11 +87,40 @@ function estimateCoordinates(lugar: string, direccion: string): { latitude: numb
   return { latitude: 10.4806, longitude: -66.9036 };
 }
 
+function getBigrams(str: string): Set<string> {
+  const bigrams = new Set<string>();
+  for (let i = 0; i < str.length - 1; i++) {
+    bigrams.add(str.substring(i, i + 2));
+  }
+  return bigrams;
+}
+
+function diceCoefficient(str1: string, str2: string): number {
+  const s1 = str1.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
+  const s2 = str2.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
+  if (s1 === s2) return 1;
+  if (s1.length < 2 || s2.length < 2) return 0;
+  
+  const bigrams1 = getBigrams(s1);
+  const bigrams2 = getBigrams(s2);
+  
+  let intersection = 0;
+  for (const val of bigrams1) {
+    if (bigrams2.has(val)) {
+      intersection++;
+    }
+  }
+  
+  return (2 * intersection) / (bigrams1.size + bigrams2.size);
+}
+
 async function runSync() {
   console.log('Starting localizados synchronization...');
   
   let categoryId = 'mock-category-uuid-54321';
   
+  let existingActiveReports: any[] = [];
+
   if (!isDryRun && supabase) {
     const { data: category, error: catError } = await supabase
       .from('categories')
@@ -104,15 +133,26 @@ async function runSync() {
       process.exit(1);
     }
     categoryId = category.id;
+
+    // Fetch existing active reports to match names
+    const { data: activeReports, error: reportsError } = await supabase
+      .from('reports')
+      .select('id, title, category_id, external_id')
+      .eq('status', 'activo');
+    
+    if (!reportsError && activeReports) {
+      existingActiveReports = activeReports;
+    }
   }
   
   console.log(`Using Category ID for "personas_encontradas": ${categoryId}`);
+  console.log(`Loaded ${existingActiveReports.length} existing active reports for deduplication matching.`);
 
   const baseUrl = 'https://localizadosvenezuela.com';
   let currentPage = 1;
   const limit = 100;
   let totalImported = 0;
-
+  
   // Let's do a safety limit of pages to import per run or fetch all
   // The API reports 890 pages with page_size=5 (totalPages=890).
   // With limit=100, there will be around 45 pages.
@@ -138,7 +178,32 @@ async function runSync() {
 
       console.log(`Found ${records.length} records on page ${currentPage}/${totalPages}. Processing...`);
 
-      const reportsToUpsert = records.map((rec: any) => {
+      const reportsToUpsert: any[] = [];
+
+      for (const rec of records) {
+        // 1. Fuzzy match deduplication against database and current batch
+        const cleanName = rec.nombreCompleto.trim();
+        if (!cleanName) continue;
+
+        const isDuplicateInDb = existingActiveReports.some((r) => {
+          if (r.external_id === rec.slug) return false; // Let upsert handle same ID update
+          
+          const cleanTitle = r.title.replace('Búsqueda: ', '').replace('Localizado: ', '').trim();
+          const score = diceCoefficient(cleanName, cleanTitle);
+          return score > 0.85;
+        });
+
+        const isDuplicateInBatch = reportsToUpsert.some((r) => {
+          const cleanTitle = r.title.replace('Búsqueda: ', '').replace('Localizado: ', '').trim();
+          const score = diceCoefficient(cleanName, cleanTitle);
+          return score > 0.85;
+        });
+
+        if (isDuplicateInDb || isDuplicateInBatch) {
+          console.log(`[DEDUPLICATED] Skipping "${cleanName}" - name is highly similar to an existing active report.`);
+          continue;
+        }
+
         const { latitude, longitude } = estimateCoordinates(rec.lugarNombre || '', rec.direccion || '');
         const details = [
           rec.direccion ? `Dirección: ${rec.direccion}` : null,
@@ -146,8 +211,8 @@ async function runSync() {
           rec.observaciones ? `Observaciones: ${rec.observaciones}` : null
         ].filter(Boolean).join('\n');
 
-        return {
-          type: 'recurso', // Resource (since they are located, they represent information/help)
+        reportsToUpsert.push({
+          type: 'recurso',
           category_id: categoryId,
           title: `Localizado: ${rec.nombreCompleto}`.substring(0, 100),
           description: details || 'Localizado sin observaciones adicionales.',
@@ -160,13 +225,15 @@ async function runSync() {
           external_id: rec.slug,
           source: 'localizadosvenezuela.com',
           image_url: null
-        };
-      });
+        });
+      }
 
       if (isDryRun) {
         console.log(`[DRY RUN] Would upsert ${reportsToUpsert.length} records. Showing first one:`);
-        console.log(JSON.stringify(reportsToUpsert[0], null, 2));
-      } else if (supabase) {
+        if (reportsToUpsert.length > 0) {
+          console.log(JSON.stringify(reportsToUpsert[0], null, 2));
+        }
+      } else if (supabase && reportsToUpsert.length > 0) {
         const { error } = await supabase
           .from('reports')
           .upsert(reportsToUpsert, {
