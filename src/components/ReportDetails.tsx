@@ -141,6 +141,20 @@ export default function ReportDetails({
         </span>
       </div>
 
+      {/* Foto si viene de la fuente externa */}
+      {report.image_url && (
+        <div className="relative w-full h-48 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-850 bg-slate-100 dark:bg-slate-950 flex items-center justify-center">
+          <img
+            src={report.image_url}
+            alt={`Foto de ${report.title}`}
+            className="object-cover w-full h-full"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+        </div>
+      )}
+
       {/* Descripción */}
       <div className="text-sm text-slate-700 dark:text-slate-350 bg-slate-50 dark:bg-slate-800/30 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
         <p className="whitespace-pre-wrap leading-relaxed">{report.description}</p>
@@ -153,6 +167,21 @@ export default function ReportDetails({
           <span className="font-mono bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded border border-slate-100 dark:border-slate-800 block break-all">
             {report.contact_info}
           </span>
+        </div>
+      )}
+
+      {/* Fuente original si existe */}
+      {report.source && (
+        <div className="text-xs text-slate-600 dark:text-slate-400">
+          <span className="font-bold text-slate-500 block mb-0.5">Fuente original:</span>
+          <a
+            href={report.source === 'desaparecidos-terremoto' ? 'https://desaparecidosterremotovenezuela.com/' : report.source}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline font-semibold block"
+          >
+            Ver reporte en Desaparecidos Terremoto Venezuela ↗
+          </a>
         </div>
       )}
 

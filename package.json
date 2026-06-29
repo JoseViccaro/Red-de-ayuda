@@ -6,10 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "sync:desaparecidos": "tsx scripts/sync-desaparecidos.ts",
+    "sync:localizados": "tsx scripts/sync-localizados.ts",
+    "sync:desaparecidos_real": "tsx scripts/sync-missing.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
+    "cheerio": "^1.2.0",
     "leaflet": "^1.9.4",
     "leaflet.markercluster": "^1.5.3",
     "lucide-react": "^1.21.0",
@@ -27,6 +31,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",
+    "tsx": "^4.22.4",
     "typescript": "^5"
   }
 }

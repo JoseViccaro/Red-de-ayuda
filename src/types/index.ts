@@ -36,6 +36,9 @@ export interface Report {
     duplicado: number;
     falso: number;
   };
+  external_id?: string;
+  source?: string;
+  image_url?: string;
 }
 
 export interface Validation {

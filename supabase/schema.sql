@@ -38,8 +38,12 @@ CREATE TABLE IF NOT EXISTS public.reports (
     reporter_alias VARCHAR(50) NOT NULL,
     contact_info TEXT,
     status TEXT NOT NULL DEFAULT 'activo' CHECK (status IN ('activo', 'resuelto', 'bloqueado')),
+    external_id TEXT,
+    source TEXT,
+    image_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT unique_source_external UNIQUE (source, external_id)
 );
 
 -- 3. Tabla de Validaciones comunitarias
@@ -140,3 +144,19 @@ BEGIN
   ORDER BY distance_meters ASC;
 END;
 $$;
+
+-- Migración para añadir campos de origen externo a reportes
+ALTER TABLE public.reports 
+ADD COLUMN IF NOT EXISTS external_id TEXT,
+ADD COLUMN IF NOT EXISTS source TEXT,
+ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+-- Añadir restricción única si no existe
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'unique_source_external'
+    ) THEN
+        ALTER TABLE public.reports ADD CONSTRAINT unique_source_external UNIQUE (source, external_id);
+    END IF;
+END $$;

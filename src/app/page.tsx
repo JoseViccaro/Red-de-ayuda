@@ -139,18 +139,33 @@ export default function Home() {
 
   const fetchReports = async () => {
     try {
-      // Consulta con join simple a validaciones para consolidar votos
-      const { data, error } = await supabase.from('reports')
-        .select('*, validations(*)')
-        .eq('status', 'activo');
-      
-      if (error) throw error;
-      if (data) {
-        processAndSetReports(data);
+      let allReports: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase.from('reports')
+          .select('*, validations(*)')
+          .eq('status', 'activo')
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+        
+        if (error) throw error;
+        if (data && data.length > 0) {
+          allReports = [...allReports, ...data];
+          if (data.length < pageSize) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+        } else {
+          hasMore = false;
+        }
       }
+      
+      processAndSetReports(allReports);
     } catch (e) {
       console.warn('Cargando reportes offline/mock:', e);
-      // Fallback a mock data
       processAndSetReports([]);
     }
   };
@@ -472,6 +487,34 @@ export default function Home() {
                 ✍️ Crear Nuevo Reporte
               </button>
 
+              {/* Panel de Estadísticas (Dashboard Stats) */}
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm flex flex-col justify-center">
+                  <span className="text-xl font-extrabold text-blue-900 dark:text-blue-200">
+                    {reports.length}
+                  </span>
+                  <span className="text-[9px] text-slate-500 uppercase font-semibold">Cant. Reportes</span>
+                </div>
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm flex flex-col justify-center">
+                  <span className="text-xl font-extrabold text-blue-950 dark:text-blue-300">
+                    {reports.length}
+                  </span>
+                  <span className="text-[9px] text-slate-500 uppercase font-semibold">Pers. Únicas</span>
+                </div>
+                <div className="bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 rounded-xl p-3 shadow-sm flex flex-col justify-center">
+                  <span className="text-xl font-extrabold text-red-600 dark:text-red-400">
+                    {reports.filter(r => r.category_id === categories.find(c => c.slug === 'personas_desaparecidas')?.id).length}
+                  </span>
+                  <span className="text-[9px] text-red-700 dark:text-red-300 uppercase font-semibold">Sin Contacto</span>
+                </div>
+                <div className="bg-green-50 dark:bg-green-950/20 border border-green-100 dark:border-green-900/30 rounded-xl p-3 shadow-sm flex flex-col justify-center">
+                  <span className="text-xl font-extrabold text-emerald-700 dark:text-emerald-400">
+                    {reports.filter(r => r.category_id === categories.find(c => c.slug === 'personas_encontradas')?.id).length}
+                  </span>
+                  <span className="text-[9px] text-emerald-800 dark:text-emerald-300 uppercase font-semibold">Localizados</span>
+                </div>
+              </div>
+
               <div className="flex justify-between items-center">
                 <h2 className="font-bold text-slate-800 dark:text-slate-100">Filtros Activos</h2>
                 {(filterType !== 'all' || filterUrgency !== 'all' || filterCategory !== 'all' || searchQuery !== '') && (
@@ -548,18 +591,27 @@ export default function Home() {
                       onClick={() => handleSelectReport(report)}
                       className="p-3 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/60 dark:border-slate-800 rounded-lg cursor-pointer transition-colors"
                     >
-                      <div className="flex justify-between items-start gap-1">
-                        <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100 line-clamp-1">{report.title}</h4>
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
-                          report.type === 'necesidad' ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'
-                        }`}>
-                          {report.type}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 line-clamp-2">{report.description}</p>
-                      <div className="flex justify-between items-center mt-2 text-[10px] text-slate-400">
-                        <span>Por: {report.reporter_alias}</span>
-                        <span className="capitalize">{report.urgency}</span>
+                      <div className="flex gap-2.5">
+                        {report.image_url && (
+                          <div className="w-12 h-12 rounded overflow-hidden shrink-0 border border-slate-200/60 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">
+                            <img src={report.image_url} alt="" className="w-full h-full object-cover" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start gap-1">
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100 line-clamp-1">{report.title}</h4>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                              report.type === 'necesidad' ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'
+                            }`}>
+                              {report.type}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 line-clamp-2">{report.description}</p>
+                          <div className="flex justify-between items-center mt-2 text-[10px] text-slate-400">
+                            <span>Por: {report.reporter_alias}</span>
+                            <span className="capitalize">{report.urgency}</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ))}
