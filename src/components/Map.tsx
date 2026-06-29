@@ -3,22 +3,7 @@
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import 'leaflet.markercluster/dist/MarkerCluster.css';
-import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import { Report } from '@/types';
-
-// leaflet.markercluster is a legacy UMD plugin that expects `L` (Leaflet) to
-// exist as a global variable. Modern bundlers (Turbopack / webpack) import
-// leaflet as an ES module and do NOT expose it globally, which causes a
-// ReferenceError at runtime. We fix this by assigning `L` to the window object
-// before requiring the plugin.
-if (typeof window !== 'undefined') {
-  (window as any).L = L;
-  require('leaflet.markercluster');
-}
-
-// Asegurarse de que el CSS de Leaflet esté importado.
-// Lo importaremos en el layout principal para que esté disponible globalmente.
 
 interface MapProps {
   reports: Report[];
@@ -41,7 +26,9 @@ export default function Map({
 }: MapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const clusterGroupRef = useRef<L.MarkerClusterGroup | null>(null);
+  // The marker layer can be either a MarkerClusterGroup (if plugin loaded) or
+  // a plain FeatureGroup (fallback). Both share the addLayer/removeLayer API.
+  const markerLayerRef = useRef<L.FeatureGroup | null>(null);
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
   const selectMarkerRef = useRef<L.Marker | null>(null);
   const userMarkerRef = useRef<L.Marker | null>(null);
@@ -58,44 +45,55 @@ export default function Map({
     const map = L.map(mapContainerRef.current).setView(center, zoom);
     mapRef.current = map;
 
-    // Capa de mosaico de OpenStreetMap (estilo adaptado para conexiones lentas y limpio)
+    // Capa de mosaico de OpenStreetMap
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap',
       maxZoom: 19,
     }).addTo(map);
 
-    // Inicializar el grupo de clusters
-    const clusterGroup = L.markerClusterGroup({
-      showCoverageOnHover: false,
-      zoomToBoundsOnClick: true,
-      maxClusterRadius: 40,
-      iconCreateFunction: (cluster) => {
-        const count = cluster.getChildCount();
-        let bgClass = 'bg-blue-600 dark:bg-blue-500 text-white';
-        let ringClass = 'ring-4 ring-blue-500/30';
-        
-        if (count > 100) {
-          bgClass = 'bg-red-600 dark:bg-red-500 text-white';
-          ringClass = 'ring-4 ring-red-500/30 animate-pulse';
-        } else if (count > 20) {
-          bgClass = 'bg-amber-500 dark:bg-amber-400 text-slate-900';
-          ringClass = 'ring-4 ring-amber-500/30';
+    // Intentar cargar markercluster de forma segura.
+    // Si falla por cualquier motivo, caemos a un FeatureGroup básico.
+    let markerLayer: L.FeatureGroup;
+    try {
+      // Exponer L como global para que el plugin UMD lo encuentre
+      (window as any).L = L;
+      require('leaflet.markercluster');
+      require('leaflet.markercluster/dist/MarkerCluster.css');
+      require('leaflet.markercluster/dist/MarkerCluster.Default.css');
+
+      markerLayer = L.markerClusterGroup({
+        showCoverageOnHover: false,
+        zoomToBoundsOnClick: true,
+        maxClusterRadius: 40,
+        iconCreateFunction: (cluster: any) => {
+          const count = cluster.getChildCount();
+          let bg = '#2563eb'; // blue-600
+          let ring = 'rgba(59,130,246,0.3)';
+
+          if (count > 100) {
+            bg = '#dc2626'; // red-600
+            ring = 'rgba(239,68,68,0.3)';
+          } else if (count > 20) {
+            bg = '#f59e0b'; // amber-500
+            ring = 'rgba(245,158,11,0.3)';
+          }
+
+          return L.divIcon({
+            html: `<div style="width:40px;height:40px;border-radius:50%;background:${bg};box-shadow:0 0 0 4px ${ring},0 2px 8px rgba(0,0,0,0.3);border:2px solid white;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;color:white;">${count}</div>`,
+            className: '',
+            iconSize: [40, 40],
+            iconAnchor: [20, 20],
+          });
         }
-        
-        return L.divIcon({
-          html: `
-            <div class="w-10 h-10 rounded-full ${bgClass} ${ringClass} border-2 border-white flex items-center justify-center font-extrabold shadow-lg text-xs transition-all duration-200">
-              <span>${count}</span>
-            </div>
-          `,
-          className: '',
-          iconSize: [40, 40],
-          iconAnchor: [20, 20],
-        });
-      }
-    });
-    map.addLayer(clusterGroup);
-    clusterGroupRef.current = clusterGroup;
+      });
+      console.log('[Map] MarkerCluster loaded successfully');
+    } catch (e) {
+      console.warn('[Map] MarkerCluster failed to load, using basic FeatureGroup:', e);
+      markerLayer = L.featureGroup();
+    }
+
+    map.addLayer(markerLayer);
+    markerLayerRef.current = markerLayer;
 
     // Evento de click para selección manual de ubicación
     if (interactive && onSelectLocation) {
@@ -103,12 +101,11 @@ export default function Map({
         const { lat, lng } = e.latlng;
         onSelectLocation(lat, lng);
 
-        // Actualizar o crear marcador temporal de selección
         if (selectMarkerRef.current) {
           selectMarkerRef.current.setLatLng(e.latlng);
         } else {
           const selectionIcon = L.divIcon({
-            html: `<div class="w-8 h-8 bg-amber-500 rounded-full border-2 border-white flex items-center justify-center text-white shadow-lg animate-bounce">📍</div>`,
+            html: `<div style="width:32px;height:32px;background:#f59e0b;border-radius:50%;border:2px solid white;display:flex;align-items:center;justify-content:center;color:white;box-shadow:0 2px 8px rgba(0,0,0,0.3);font-size:16px;">📍</div>`,
             className: '',
             iconSize: [32, 32],
             iconAnchor: [16, 32],
@@ -150,9 +147,9 @@ export default function Map({
     } else {
       const userIcon = L.divIcon({
         html: `
-          <div class="relative flex h-6 w-6">
-            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-            <span class="relative inline-flex rounded-full h-6 w-6 bg-blue-600 border-2 border-white shadow-md"></span>
+          <div style="position:relative;width:24px;height:24px;">
+            <span style="position:absolute;display:inline-flex;width:100%;height:100%;border-radius:50%;background:#60a5fa;opacity:0.75;animation:ping 1s cubic-bezier(0,0,0.2,1) infinite;"></span>
+            <span style="position:relative;display:inline-flex;width:24px;height:24px;border-radius:50%;background:#2563eb;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3);"></span>
           </div>
         `,
         className: '',
@@ -168,44 +165,35 @@ export default function Map({
   // Actualizar marcadores de reportes
   useEffect(() => {
     const map = mapRef.current;
-    const clusterGroup = clusterGroupRef.current;
-    if (!map || !clusterGroup) return;
+    const markerLayer = markerLayerRef.current;
+    if (!map || !markerLayer) return;
 
-    // Eliminar marcadores viejos que no estén en la lista (removiendo del clusterGroup)
+    // Eliminar marcadores viejos que ya no están en la lista
     Object.keys(markersRef.current).forEach((id) => {
       if (!reports.find((r) => r.id === id)) {
-        clusterGroup.removeLayer(markersRef.current[id]);
+        markerLayer.removeLayer(markersRef.current[id]);
         delete markersRef.current[id];
       }
     });
 
-    // Agregar o actualizar marcadores nuevos
+    // Agregar o actualizar marcadores
     reports.forEach((report) => {
       const latLng: L.LatLngExpression = [report.latitude, report.longitude];
       const isSelected = selectedReportId === report.id;
 
-      // Color e ícono basado en tipo de reporte y urgencia
       const isNeed = report.type === 'necesidad';
-      const colorClass = isNeed 
-        ? (report.urgency === 'critica' ? 'bg-red-600' : 'bg-red-500') 
-        : 'bg-emerald-600';
-      
-      const pulseClass = isSelected ? 'ring-4 ring-offset-2 ring-blue-500 scale-125' : '';
-      
-      // Personalizar el marcador textual para casos especiales de personas
-      let markerText = isNeed ? '⚠️' : '🤝';
-      if (report.category_id) {
-        // Encontrar la categoría si coincide con personas desaparecidas/encontradas
-        const catSlug = reports.find(r => r.id === report.id)?.category_id;
-        // (El emoji se mantiene simple y legible en el mapa, pero podemos usar el texto que queramos)
-      }
+      const bg = isNeed
+        ? (report.urgency === 'critica' ? '#dc2626' : '#ef4444')
+        : '#059669';
+
+      const ring = isSelected
+        ? 'box-shadow:0 0 0 4px rgba(59,130,246,0.5),0 2px 8px rgba(0,0,0,0.3);transform:scale(1.25);'
+        : 'box-shadow:0 1px 4px rgba(0,0,0,0.3);';
+
+      const markerText = isNeed ? '⚠️' : '🤝';
 
       const customIcon = L.divIcon({
-        html: `
-          <div class="w-8 h-8 rounded-full ${colorClass} ${pulseClass} border-2 border-white flex items-center justify-center text-white shadow-md transition-all duration-200 cursor-pointer">
-            <span class="text-sm font-bold">${markerText}</span>
-          </div>
-        `,
+        html: `<div style="width:32px;height:32px;border-radius:50%;background:${bg};border:2px solid white;display:flex;align-items:center;justify-content:center;${ring}cursor:pointer;transition:all 0.2s;"><span style="font-size:14px;">${markerText}</span></div>`,
         className: '',
         iconSize: [32, 32],
         iconAnchor: [16, 32],
@@ -216,18 +204,17 @@ export default function Map({
         markersRef.current[report.id].setIcon(customIcon);
       } else {
         const marker = L.marker(latLng, { icon: customIcon });
-        
-        // Crear popup simple para evitar bloating
+
         const popupContent = `
-          <div class="p-1 max-w-[200px]">
-            <h3 class="font-bold text-slate-800 text-sm leading-tight">${report.title}</h3>
-            <p class="text-xs text-slate-500 mt-1 capitalize">${report.type} - Urgencia: ${report.urgency}</p>
-            <p class="text-xs text-slate-600 mt-1 line-clamp-2">${report.description}</p>
+          <div style="padding:4px;max-width:200px;">
+            <h3 style="font-weight:700;color:#1e293b;font-size:14px;line-height:1.3;margin:0;">${report.title}</h3>
+            <p style="font-size:11px;color:#64748b;margin:4px 0 0;text-transform:capitalize;">${report.type} - Urgencia: ${report.urgency}</p>
+            <p style="font-size:11px;color:#475569;margin:4px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${report.description}</p>
           </div>
         `;
         marker.bindPopup(popupContent);
-        
-        clusterGroup.addLayer(marker);
+
+        markerLayer.addLayer(marker);
         markersRef.current[report.id] = marker;
       }
     });
