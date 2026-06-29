@@ -3,6 +3,9 @@
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.markercluster';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import { Report } from '@/types';
 
 interface MapProps {
@@ -51,16 +54,9 @@ export default function Map({
       maxZoom: 19,
     }).addTo(map);
 
-    // Intentar cargar markercluster de forma segura.
-    // Si falla por cualquier motivo, caemos a un FeatureGroup básico.
+    // Usar MarkerCluster si está disponible, con fallback a FeatureGroup
     let markerLayer: L.FeatureGroup;
-    try {
-      // Exponer L como global para que el plugin UMD lo encuentre
-      (window as any).L = L;
-      require('leaflet.markercluster');
-      require('leaflet.markercluster/dist/MarkerCluster.css');
-      require('leaflet.markercluster/dist/MarkerCluster.Default.css');
-
+    if (typeof L.markerClusterGroup === 'function') {
       markerLayer = L.markerClusterGroup({
         showCoverageOnHover: false,
         zoomToBoundsOnClick: true,
@@ -86,9 +82,7 @@ export default function Map({
           });
         }
       });
-      console.log('[Map] MarkerCluster loaded successfully');
-    } catch (e) {
-      console.warn('[Map] MarkerCluster failed to load, using basic FeatureGroup:', e);
+    } else {
       markerLayer = L.featureGroup();
     }
 

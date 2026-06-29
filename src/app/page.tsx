@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import MapLoader from '@/components/MapLoader';
 import ReportForm from '@/components/ReportForm';
 import ReportDetails from '@/components/ReportDetails';
 import PWARegister from '@/components/PWARegister';
+import SafeImage from '@/components/SafeImage';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { Category, Report, ReportType, UrgencyLevel, ValidationType } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -45,7 +46,11 @@ export default function Home() {
   const [filterUrgency, setFilterUrgency] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  
+  const [searchInput, setSearchInput] = useState<string>('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const reportsHashRef = useRef<string>('');
+  const lastFetchedRef = useRef<string>('');
+
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmittingValidation, setIsSubmittingValidation] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string>('');
@@ -74,13 +79,21 @@ export default function Home() {
 
     // Consultar nuevos reportes silenciosamente cada 45 segundos si hay red
     const interval = setInterval(() => {
-      if (typeof window !== 'undefined' && navigator.onLine) {
-        fetchReports();
+      if (typeof window !== 'undefined' && navigator.onLine && lastFetchedRef.current) {
+        fetchReports(lastFetchedRef.current);
       }
     }, 45000);
 
     return () => clearInterval(interval);
   }, []);
+
+  // Debounce del buscador: 150ms después de dejar de tipear
+  useEffect(() => {
+    debounceRef.current = setTimeout(() => {
+      setSearchQuery(searchInput);
+    }, 150);
+    return () => clearTimeout(debounceRef.current);
+  }, [searchInput]);
 
   // Centrar mapa si se obtienen coordenadas de geolocalización
   useEffect(() => {
@@ -146,54 +159,115 @@ export default function Home() {
     }
   };
 
-  const fetchReports = async () => {
+  // Calcula un hash rápido de (id + updated_at) para detectar cambios sin comparar todo
+  const computeDataHash = (records: any[]): string => {
+    return records.map((r) => `${r.id}:${r.updated_at ?? ''}`).join('|');
+  };
+
+  const fetchReports = async (since?: string) => {
     try {
       let allReports: any[] = [];
-      let page = 0;
-      const pageSize = 1000;
-      let hasMore = true;
 
-      while (hasMore) {
+      if (since) {
+        // Polling incremental: solo cambios desde la última vez
         const { data, error } = await supabase.from('reports')
           .select('*, validations(*)')
           .eq('status', 'activo')
-          .range(page * pageSize, (page + 1) * pageSize - 1);
-        
+          .gt('updated_at', since)
+          .limit(500);
+
         if (error) throw error;
-        if (data && data.length > 0) {
-          allReports = [...allReports, ...data];
-          if (data.length < pageSize) {
-            hasMore = false;
-          } else {
-            page++;
+        if (!data || data.length === 0) return; // Sin cambios, no tocar nada
+
+        allReports = data;
+        lastFetchedRef.current = new Date().toISOString();
+
+        // Merge: actualizar reportes existentes + agregar nuevos
+        setReports((prev) => {
+          const updatedMap = new Map(prev.map((r) => [r.id, r]));
+          for (const raw of allReports) {
+            const formatted = {
+              ...raw,
+              title: raw.title ?? '',
+              description: raw.description ?? '',
+              reporter_alias: raw.reporter_alias ?? '',
+              contact_info: raw.contact_info ?? '',
+              validations_count: { confirmado: 0, desactualizado: 0, duplicado: 0, falso: 0 },
+            };
+            // Recalcular validations_count
+            const validations = raw.validations || [];
+            validations.forEach((v: any) => {
+              if (v.vote in formatted.validations_count) {
+                formatted.validations_count[v.vote as ValidationType]++;
+              }
+            });
+            updatedMap.set(raw.id, formatted);
           }
-        } else {
-          hasMore = false;
+          return [...updatedMap.values()];
+        });
+      } else {
+        // Carga inicial completa
+        let page = 0;
+        const pageSize = 1000;
+        let hasMore = true;
+
+        while (hasMore) {
+          const { data, error } = await supabase.from('reports')
+            .select('*, validations(*)')
+            .eq('status', 'activo')
+            .range(page * pageSize, (page + 1) * pageSize - 1);
+          
+          if (error) throw error;
+          if (data && data.length > 0) {
+            allReports = [...allReports, ...data];
+            if (data.length < pageSize) {
+              hasMore = false;
+            } else {
+              page++;
+            }
+          } else {
+            hasMore = false;
+          }
         }
-      }
-      
-      if (allReports.length > 0) {
-        try {
-          localStorage.setItem('cached_reports', JSON.stringify(allReports));
-        } catch (storageErr) {
-          console.warn('localStorage write failed:', storageErr);
+
+        // Cache en localStorage solo cuando hay datos frescos
+        if (allReports.length > 0) {
+          try {
+            localStorage.setItem('cached_reports', JSON.stringify(allReports));
+          } catch (storageErr) {
+            console.warn('localStorage write failed:', storageErr);
+          }
         }
+
+        // Comparar hash para evitar re-render si nada cambió
+        const newHash = computeDataHash(allReports);
+        if (newHash === reportsHashRef.current) return;
+
+        reportsHashRef.current = newHash;
+        processAndSetReports(allReports);
       }
-      
-      processAndSetReports(allReports);
+
+      lastFetchedRef.current = new Date().toISOString();
     } catch (e) {
       console.warn('Error fetching reports, using offline cache:', e);
-      const cached = localStorage.getItem('cached_reports');
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          processAndSetReports(parsed);
-          setSyncStatus('Modo Offline: mostrando datos guardados localmente.');
-        } catch (parseError) {
+      if (!since) {
+        // Solo cargar cache offline en carga inicial, no en polling
+        const cached = localStorage.getItem('cached_reports');
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            const newHash = computeDataHash(parsed);
+            if (newHash !== reportsHashRef.current) {
+              reportsHashRef.current = newHash;
+              processAndSetReports(parsed);
+              setSyncStatus('Modo Offline: mostrando datos guardados localmente.');
+            }
+          } catch (parseError) {
+            processAndSetReports([]);
+          }
+        } else {
           processAndSetReports([]);
         }
-      } else {
-        processAndSetReports([]);
       }
     }
   };
@@ -218,6 +292,10 @@ export default function Home() {
 
       return {
         ...r,
+        title: r.title ?? '',
+        description: r.description ?? '',
+        reporter_alias: r.reporter_alias ?? '',
+        contact_info: r.contact_info ?? '',
         validations_count: counts,
       };
     });
@@ -407,20 +485,22 @@ export default function Home() {
   };
 
   // Filtrar la lista de reportes
-  const filteredReports = reports.filter((r) => {
-    const typeMatch = filterType === 'all' || r.type === filterType;
-    const urgencyMatch = filterUrgency === 'all' || r.urgency === filterUrgency;
-    const categoryMatch = filterCategory === 'all' || r.category_id === filterCategory;
-    
-    // Filtro por texto (busca en título, descripción, alias y datos de contacto)
-    const matchesSearch = searchQuery.trim() === '' || 
-      r.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.reporter_alias.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (r.contact_info && r.contact_info.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredReports = useMemo(() => {
+    return reports.filter((r) => {
+      const typeMatch = filterType === 'all' || r.type === filterType;
+      const urgencyMatch = filterUrgency === 'all' || r.urgency === filterUrgency;
+      const categoryMatch = filterCategory === 'all' || r.category_id === filterCategory;
+      
+      // Filtro por texto (busca en título, descripción, alias y datos de contacto)
+      const matchesSearch = searchQuery.trim() === '' || 
+        (r.title ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (r.description ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (r.reporter_alias ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (r.contact_info ?? '').toLowerCase().includes(searchQuery.toLowerCase());
 
-    return typeMatch && urgencyMatch && categoryMatch && matchesSearch;
-  });
+      return typeMatch && urgencyMatch && categoryMatch && matchesSearch;
+    });
+  }, [reports, filterType, filterUrgency, filterCategory, searchQuery]);
 
   return (
     <div className="flex flex-col flex-1 h-dvh bg-slate-50 dark:bg-slate-950 font-sans overflow-hidden">
@@ -545,9 +625,9 @@ export default function Home() {
 
               <div className="flex justify-between items-center">
                 <h2 className="font-bold text-slate-800 dark:text-slate-100">Filtros Activos</h2>
-                {(filterType !== 'all' || filterUrgency !== 'all' || filterCategory !== 'all' || searchQuery !== '') && (
+                {(filterType !== 'all' || filterUrgency !== 'all' || filterCategory !== 'all' || searchInput !== '') && (
                   <button 
-                    onClick={() => { setFilterType('all'); setFilterUrgency('all'); setFilterCategory('all'); setSearchQuery(''); }}
+                    onClick={() => { setFilterType('all'); setFilterUrgency('all'); setFilterCategory('all'); setSearchQuery(''); setSearchInput(''); }}
                     className="text-xs text-blue-600 dark:text-blue-400 font-bold"
                   >
                     Limpiar
@@ -560,13 +640,13 @@ export default function Home() {
                 <input
                   type="text"
                   placeholder="🔍 Buscar por nombre, C.I., palabra..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
                   className="w-full text-xs rounded-lg border border-slate-200 dark:border-slate-800 p-2.5 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
                 />
-                {searchQuery && (
+                {searchInput && (
                   <button
-                    onClick={() => setSearchQuery('')}
+                    onClick={() => { setSearchInput(''); setSearchQuery(''); }}
                     className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold"
                   >
                     ✕
@@ -621,8 +701,13 @@ export default function Home() {
                     >
                       <div className="flex gap-2.5">
                         {report.image_url && (
-                          <div className="w-12 h-12 rounded overflow-hidden shrink-0 border border-slate-200/60 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">
-                            <img src={report.image_url} alt="" className="w-full h-full object-cover" />
+                          <div className="w-12 h-12 rounded overflow-hidden shrink-0 border border-slate-200/60 dark:border-slate-700 bg-slate-200 dark:bg-slate-800">
+                            <SafeImage
+                              src={report.image_url}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              containerClassName="w-full h-full"
+                            />
                           </div>
                         )}
                         <div className="flex-1 min-w-0">

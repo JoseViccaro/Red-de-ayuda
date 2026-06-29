@@ -2,6 +2,7 @@
 
 import { Report, ValidationType } from '@/types';
 import { useState } from 'react';
+import SafeImage from './SafeImage';
 
 interface ReportDetailsProps {
   report: Report;
@@ -37,13 +38,13 @@ export default function ReportDetails({
     const reportUrl = `${appUrl}?report=${report.id}`;
 
     // Intentar deducir si es un caso de persona por su título o descripción
-    const isMissingPerson = report.title.toLowerCase().includes('desaparecid') || 
-                             report.description.toLowerCase().includes('desaparecid') || 
-                             report.title.toLowerCase().includes('búsqueda');
+    const isMissingPerson = (report.title ?? '').toLowerCase().includes('desaparecid') || 
+                             (report.description ?? '').toLowerCase().includes('desaparecid') || 
+                             (report.title ?? '').toLowerCase().includes('búsqueda');
                              
-    const isFoundPerson = report.title.toLowerCase().includes('encontrad') || 
-                           report.title.toLowerCase().includes('a salvo') || 
-                           report.description.toLowerCase().includes('encontrad');
+    const isFoundPerson = (report.title ?? '').toLowerCase().includes('encontrad') || 
+                           (report.title ?? '').toLowerCase().includes('a salvo') || 
+                           (report.description ?? '').toLowerCase().includes('encontrad');
 
     if (isMissingPerson) {
       shareText = `🇻🇪 Red de Ayuda: Se busca a ${report.title}.\nContacto: ${report.contact_info || 'No provisto'}.\n${report.description}\n\nVer mapa y detalles en:`;
@@ -143,14 +144,12 @@ export default function ReportDetails({
 
       {/* Foto si viene de la fuente externa */}
       {report.image_url && (
-        <div className="relative w-full h-48 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-850 bg-slate-100 dark:bg-slate-950 flex items-center justify-center">
-          <img
+        <div className="relative w-full h-48 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-850 bg-slate-100 dark:bg-slate-950">
+          <SafeImage
             src={report.image_url}
             alt={`Foto de ${report.title}`}
             className="object-cover w-full h-full"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none';
-            }}
+            containerClassName="w-full h-full"
           />
         </div>
       )}
