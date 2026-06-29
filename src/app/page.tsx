@@ -131,9 +131,20 @@ export default function Home() {
     try {
       const { data, error } = await supabase.from('categories').select('*');
       if (error) throw error;
-      if (data && data.length > 0) setCategories(data);
+      if (data && data.length > 0) {
+        setCategories(data);
+        localStorage.setItem('cached_categories', JSON.stringify(data));
+      }
     } catch (e) {
       console.warn('Usando categorías locales (Supabase no configurado):', e);
+      const cached = localStorage.getItem('cached_categories');
+      if (cached) {
+        try {
+          setCategories(JSON.parse(cached));
+        } catch {
+          // fallback silencioso
+        }
+      }
     }
   };
 
@@ -163,10 +174,26 @@ export default function Home() {
         }
       }
       
+      if (allReports.length > 0) {
+        localStorage.setItem('cached_reports', JSON.stringify(allReports));
+      }
+      
       processAndSetReports(allReports);
     } catch (e) {
-      console.warn('Cargando reportes offline/mock:', e);
-      processAndSetReports([]);
+      console.warn('Error fetching online reports, loading from offline cache:', e);
+      const cached = localStorage.getItem('cached_reports');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          console.log(`Loaded ${parsed.length} reports from offline cache.`);
+          processAndSetReports(parsed);
+          setSyncStatus('Modo Offline: Visualizando datos guardados localmente.');
+        } catch (parseError) {
+          processAndSetReports([]);
+        }
+      } else {
+        processAndSetReports([]);
+      }
     }
   };
 

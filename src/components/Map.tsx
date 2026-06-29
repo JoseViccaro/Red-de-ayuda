@@ -60,6 +60,30 @@ export default function Map({
       showCoverageOnHover: false,
       zoomToBoundsOnClick: true,
       maxClusterRadius: 40,
+      iconCreateFunction: (cluster) => {
+        const count = cluster.getChildCount();
+        let bgClass = 'bg-blue-600 dark:bg-blue-500 text-white';
+        let ringClass = 'ring-4 ring-blue-500/30';
+        
+        if (count > 100) {
+          bgClass = 'bg-red-600 dark:bg-red-500 text-white';
+          ringClass = 'ring-4 ring-red-500/30 animate-pulse';
+        } else if (count > 20) {
+          bgClass = 'bg-amber-500 dark:bg-amber-400 text-slate-900';
+          ringClass = 'ring-4 ring-amber-500/30';
+        }
+        
+        return L.divIcon({
+          html: `
+            <div class="w-10 h-10 rounded-full ${bgClass} ${ringClass} border-2 border-white flex items-center justify-center font-extrabold shadow-lg text-xs transition-all duration-200">
+              <span>${count}</span>
+            </div>
+          `,
+          className: '',
+          iconSize: [40, 40],
+          iconAnchor: [20, 20],
+        });
+      }
     });
     map.addLayer(clusterGroup);
     clusterGroupRef.current = clusterGroup;
